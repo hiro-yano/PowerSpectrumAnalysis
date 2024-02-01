@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>スペクトログラム</title>
+    <style>
+        canvas {
+            width: 100%;
+            height: 400px;
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <h1>スペクトログラム</h1>
+    <canvas id="spectrogram"></canvas>
+
+    <script>
+        window.addEventListener('load', init);
+
+        function init() {
+            if (!('AudioContext' in window || 'webkitAudioContext' in window)) {
+                alert('Web Audio APIはサポートされていません。');
+                return;
+            }
+
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const analyser = audioContext.createAnalyser();
+            analyser.fftSize = 1024;
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            const canvas = document.getElementById('spectrogram');
+            const canvasContext = canvas.getContext('2d');
+
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then((stream) => {
+                    const source = audioContext.createMediaStreamSource(stream);
+                    source.connect(analyser);
+                    analyser.connect(audioContext.destination);
+
+                    const spectrogramData = [];
+
+                    function drawSpectrogram() {
+                        analyser.getByteFrequencyData(dataArray);
+
+                        spectrogramData.push(new Uint8Array(dataArray));
+
+                        canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+
+                        const pixelsPerFrame = canvas.width / spectrogramData.length;
+                        const pixelsPerFrequency = canvas.height / bufferLength;
+
+                        for (let i = 0; i < spectrogramData.length; i++) {
+                            for (let j = 0; j < bufferLength; j++) {
+                                const value = spectrogramData[i][j];
+                                const hue = (1 - value / 255) * 240; // 0: Red, 240: Blue
+                                const color = `hsl(${hue}, 100%, 50%)`;
+
+                                canvasContext.fillStyle = color;
+                                canvasContext.fillRect(i * pixelsPerFrame, j * pixelsPerFrequency, pixelsPerFrame, pixelsPerFrequency);
+                            }
+                        }
+
+                        drawAxisLabels(canvas, spectrogramData.length, bufferLength, audioContext.sampleRate);
+                    }
+
+                    setInterval(drawSpectrogram, 30);
+                })
+                .catch((error) => {
+                    console.error('マイク入力の取得に失敗しました:', error);
+                });
+        }
+
+        function drawAxisLabels(canvas, frames, bufferLength, sampleRate) {
+            const canvasContext = canvas.getContext('2d');
+            canvasContext.fillStyle = 'rgb(0, 0, 0)';
+            canvasContext.font = '12px Arial';
+            canvasContext.textAlign = 'center';
+
+            const timeLabelsCount = 5;
+            const timeStep = Math.floor(frames / timeLabelsCount);
+
+            for (let i = 0; i <= timeLabelsCount; i++) {
+                const time = (i * timeStep * bufferLength) / sampleRate;
+                const x = (canvas.width / timeLabelsCount) * i;
+
+                if (x < canvas.width) {
+                    canvasContext.fillText(time.toFixed(2) + ' s', x, canvas.height - 5);
+                }
+            }
+
+            const freqLabelsCount = 8;
+            const freqStep = Math.floor(4000 / freqLabelsCount);
+
+            for (let i = 0; i <= freqLabelsCount; i++) {
+                const frequency = i * freqStep;
+                const y = (canvas.height / freqLabelsCount) * i;
+
+                if (y < canvas.height) {
+                    canvasContext.fillText(frequency.toFixed(2) + ' Hz', canvas.width - 30, canvas.height - y + 5);
+                }
+            }
+        }
+    </script>
+</body>
+</html>
